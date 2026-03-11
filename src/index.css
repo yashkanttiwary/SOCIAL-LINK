@@ -75,3 +75,18 @@
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-3);
 }
+
+
+@layer base {
+  body {
+    background-image: radial-gradient(circle at 0% 0%, color-mix(in oklab, var(--primary) 16%, transparent), transparent 30%), radial-gradient(circle at 100% 0%, color-mix(in oklab, var(--primary) 10%, transparent), transparent 25%);
+    min-height: 100vh;
+  }
+}
+
+@layer components {
+  .premium-surface {
+    background: linear-gradient(160deg, color-mix(in oklab, var(--bg-surface) 94%, white), var(--bg-surface));
+    box-shadow: 0 10px 30px color-mix(in oklab, black 24%, transparent);
+  }
+}
