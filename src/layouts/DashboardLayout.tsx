@@ -6,14 +6,24 @@ import { Sparkles } from 'lucide-react';
 import { useAIPanelStore } from '../store/aiPanelStore';
 import { useThemeStore } from '../store/themeStore';
 import { useEffect } from 'react';
+import { useDataStore } from '../store/dataStore';
 
 export function DashboardLayout() {
   const { openPanel } = useAIPanelStore();
   const { theme } = useThemeStore();
+  const { refreshIntervalMinutes, autoRefresh } = useDataStore();
 
   useEffect(() => {
     document.documentElement.className = theme === 'clarity' ? 'theme-clarity' : '';
   }, [theme]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      autoRefresh();
+    }, refreshIntervalMinutes * 60_000);
+
+    return () => window.clearInterval(timer);
+  }, [refreshIntervalMinutes, autoRefresh]);
 
   return (
     <div className="flex h-screen bg-bg-base text-text-1 overflow-hidden font-sans transition-colors duration-300">

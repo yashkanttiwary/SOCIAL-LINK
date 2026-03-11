@@ -2,9 +2,15 @@ import { useState } from 'react';
 import { Youtube, Link as LinkIcon, Moon, Sun, Users, Bell, Mail, Smartphone, Trash2, CheckCircle2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useThemeStore } from '../store/themeStore';
+import { useDataStore } from '../store/dataStore';
+import { useAuthStore } from '../store/authStore';
+import { AI_PROVIDERS, getProviderById, type AIProviderId } from '../lib/aiProviders';
 
 export function Settings() {
   const { theme, setTheme } = useThemeStore();
+  const { refreshIntervalMinutes, setRefreshIntervalMinutes } = useDataStore();
+  const { provider, model, apiKey, setProvider, setModel, setApiKey, saveConfig, logout } = useAuthStore();
+  const providerData = getProviderById(provider);
   const [notifications, setNotifications] = useState({
     email: true,
     inApp: true,
@@ -17,6 +23,35 @@ export function Settings() {
         <h1 className="text-3xl font-black text-text-1 tracking-tight mb-2">Settings</h1>
         <p className="text-text-2">Manage your account, connected channels, and team preferences.</p>
       </div>
+
+
+      <section>
+        <h2 className="text-sm font-bold text-text-3 uppercase tracking-wider mb-4">AI API Configuration</h2>
+        <div className="bg-bg-surface border border-border rounded-xl p-6 shadow-sm space-y-4">
+          <div className="grid md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-bold mb-2 text-text-1">Provider</label>
+              <select value={provider} onChange={(e) => setProvider(e.target.value as AIProviderId)} className="w-full bg-bg-elevated border border-border rounded-lg px-3 py-2.5 text-sm">
+                {AI_PROVIDERS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-bold mb-2 text-text-1">Model</label>
+              <select value={model} onChange={(e) => setModel(e.target.value)} className="w-full bg-bg-elevated border border-border rounded-lg px-3 py-2.5 text-sm">
+                {providerData.models.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-bold mb-2 text-text-1">API Key</label>
+            <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder={providerData.keyPlaceholder} className="w-full bg-bg-elevated border border-border rounded-lg px-4 py-2.5 text-sm" />
+          </div>
+          <div className="flex gap-2">
+            <button onClick={saveConfig} className="px-4 py-2 rounded-lg bg-primary text-white font-bold text-sm">Save API Config</button>
+            <button onClick={logout} className="px-4 py-2 rounded-lg border border-danger/40 text-danger font-bold text-sm">Logout</button>
+          </div>
+        </div>
+      </section>
 
       {/* Connected Channels */}
       <section>
@@ -124,6 +159,25 @@ export function Settings() {
             <button className="text-text-3 hover:text-danger p-2 rounded-lg transition-colors">
               <Trash2 className="w-4 h-4" />
             </button>
+          </div>
+        </div>
+      </section>
+
+
+      <section>
+        <h2 className="text-sm font-bold text-text-3 uppercase tracking-wider mb-4">Data Refresh</h2>
+        <div className="bg-bg-surface border border-border rounded-xl p-6 shadow-sm">
+          <p className="text-sm text-text-2 mb-4">Choose how often the dashboard re-checks the existing data cache.</p>
+          <div className="flex gap-2">
+            {[1, 2].map((minutes) => (
+              <button
+                key={minutes}
+                onClick={() => setRefreshIntervalMinutes(minutes as 1 | 2)}
+                className={cn('px-4 py-2 rounded-lg border text-sm font-bold', refreshIntervalMinutes === minutes ? 'bg-primary text-white border-primary' : 'border-border bg-bg-elevated text-text-2')}
+              >
+                Every {minutes} minute{minutes === 1 ? '' : 's'}
+              </button>
+            ))}
           </div>
         </div>
       </section>
