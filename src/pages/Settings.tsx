@@ -1,21 +1,90 @@
-import { useState } from 'react';
-import { Youtube, Link as LinkIcon, Moon, Sun, Users, Bell, Mail, Smartphone, Trash2, CheckCircle2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Youtube, Link as LinkIcon, Moon, Sun, Users, Bell, Mail, Smartphone, Trash2, CheckCircle2, Key, Bot, Save, Loader2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useThemeStore } from '../store/themeStore';
-import { useDataStore } from '../store/dataStore';
-import { useAuthStore } from '../store/authStore';
-import { AI_PROVIDERS, getProviderById, type AIProviderId } from '../lib/aiProviders';
+import { api } from '../lib/api';
 
 export function Settings() {
   const { theme, setTheme } = useThemeStore();
-  const { refreshIntervalMinutes, setRefreshIntervalMinutes } = useDataStore();
-  const { provider, model, apiKey, setProvider, setModel, setApiKey, saveConfig, logout } = useAuthStore();
-  const providerData = getProviderById(provider);
   const [notifications, setNotifications] = useState({
     email: true,
     inApp: true,
     digest: false
   });
+
+  const [aiConfig, setAiConfig] = useState({ provider: 'gemini', model: 'gemini-2.5-flash', apiKey: '' });
+  const [ytConfig, setYtConfig] = useState({ channelInput: '', apiKey: '' });
+  const [savingAi, setSavingAi] = useState(false);
+  const [savingYt, setSavingYt] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const [configData, setConfigData] = useState<any>(null);
+
+  useEffect(() => {
+    async function loadConfig() {
+      try {
+        const data = await api.config.current();
+        setConfigData(data);
+        if (data.ai) {
+          setAiConfig({ provider: data.ai.provider, model: data.ai.model, apiKey: '********' });
+        }
+        if (data.youtube) {
+          setYtConfig({ channelInput: data.youtube.channelInput, apiKey: '********' });
+        }
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadConfig();
+  }, []);
+
+  const handleSaveAi = async () => {
+    setSavingAi(true);
+    try {
+      await api.config.saveAi(aiConfig);
+      const data = await api.config.current();
+      setConfigData(data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSavingAi(false);
+    }
+  };
+
+  const handleSaveYt = async () => {
+    setSavingYt(true);
+    try {
+      await api.config.saveYoutube(ytConfig);
+      const data = await api.config.current();
+      setConfigData(data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSavingYt(false);
+    }
+  };
+
+  const handleSync = async () => {
+    setSyncing(true);
+    try {
+      await api.sync.start();
+      // In a real app, we'd poll for completion or use WebSockets
+      setTimeout(() => setSyncing(false), 2500);
+    } catch (err) {
+      console.error(err);
+      setSyncing(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-4xl mx-auto space-y-8 pb-12">
@@ -24,61 +93,134 @@ export function Settings() {
         <p className="text-text-2">Manage your account, connected channels, and team preferences.</p>
       </div>
 
-
+      {/* AI Configuration */}
       <section>
-        <h2 className="text-sm font-bold text-text-3 uppercase tracking-wider mb-4">AI API Configuration</h2>
-        <div className="bg-bg-surface border border-border rounded-xl p-6 shadow-sm space-y-4">
-          <div className="grid md:grid-cols-2 gap-4">
+        <h2 className="text-sm font-bold text-text-3 uppercase tracking-wider mb-4 flex items-center gap-2">
+          <Bot className="w-4 h-4" /> AI Configuration
+        </h2>
+        <div className="bg-bg-surface border border-border rounded-xl p-6 shadow-sm space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <label className="block text-sm font-bold mb-2 text-text-1">Provider</label>
-              <select value={provider} onChange={(e) => setProvider(e.target.value as AIProviderId)} className="w-full bg-bg-elevated border border-border rounded-lg px-3 py-2.5 text-sm">
-                {AI_PROVIDERS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+              <label className="block text-sm font-bold text-text-1 mb-2">Provider</label>
+              <select 
+                value={aiConfig.provider}
+                onChange={(e) => setAiConfig({...aiConfig, provider: e.target.value})}
+                className="w-full bg-bg-elevated border border-border rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-primary transition-colors text-text-1"
+              >
+                <option value="gemini">Google Gemini</option>
+                <option value="openai">OpenAI</option>
+                <option value="anthropic">Anthropic</option>
               </select>
             </div>
             <div>
-              <label className="block text-sm font-bold mb-2 text-text-1">Model</label>
-              <select value={model} onChange={(e) => setModel(e.target.value)} className="w-full bg-bg-elevated border border-border rounded-lg px-3 py-2.5 text-sm">
-                {providerData.models.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
-              </select>
+              <label className="block text-sm font-bold text-text-1 mb-2">Model</label>
+              <input 
+                type="text" 
+                value={aiConfig.model}
+                onChange={(e) => setAiConfig({...aiConfig, model: e.target.value})}
+                className="w-full bg-bg-elevated border border-border rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-primary transition-colors text-text-1"
+              />
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-sm font-bold text-text-1 mb-2">API Key</label>
+              <div className="relative">
+                <Key className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-3" />
+                <input 
+                  type="password" 
+                  value={aiConfig.apiKey}
+                  onChange={(e) => setAiConfig({...aiConfig, apiKey: e.target.value})}
+                  placeholder="Enter your API key"
+                  className="w-full bg-bg-elevated border border-border rounded-lg pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:border-primary transition-colors text-text-1"
+                />
+              </div>
+              <p className="text-xs text-text-3 mt-2">Your API key is encrypted at rest.</p>
             </div>
           </div>
-          <div>
-            <label className="block text-sm font-bold mb-2 text-text-1">API Key</label>
-            <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder={providerData.keyPlaceholder} className="w-full bg-bg-elevated border border-border rounded-lg px-4 py-2.5 text-sm" />
-          </div>
-          <div className="flex gap-2">
-            <button onClick={saveConfig} className="px-4 py-2 rounded-lg bg-primary text-white font-bold text-sm">Save API Config</button>
-            <button onClick={logout} className="px-4 py-2 rounded-lg border border-danger/40 text-danger font-bold text-sm">Logout</button>
+          <div className="flex justify-end pt-4 border-t border-border">
+            <button 
+              onClick={handleSaveAi}
+              disabled={savingAi}
+              className="flex items-center gap-2 px-4 py-2 bg-primary text-white font-bold rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
+            >
+              {savingAi ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              Save AI Config
+            </button>
           </div>
         </div>
       </section>
 
       {/* Connected Channels */}
       <section>
-        <h2 className="text-sm font-bold text-text-3 uppercase tracking-wider mb-4">Connected Channels</h2>
+        <h2 className="text-sm font-bold text-text-3 uppercase tracking-wider mb-4 flex items-center gap-2">
+          <Youtube className="w-4 h-4" /> YouTube Integration
+        </h2>
         <div className="bg-bg-surface border border-border rounded-xl p-6 shadow-sm space-y-6">
-          <div className="flex items-center justify-between p-4 border border-border rounded-xl bg-bg-elevated">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-danger rounded-full flex items-center justify-center text-white">
-                <Youtube className="w-6 h-6" />
+          
+          {configData?.youtube ? (
+            <div className="flex items-center justify-between p-4 border border-border rounded-xl bg-bg-elevated">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-danger rounded-full flex items-center justify-center text-white">
+                  <Youtube className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-text-1 text-lg">{configData.youtube.channelInput}</h3>
+                  <p className="text-sm text-text-2">Connected via API Key</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-4">
+                <span className="hidden md:flex items-center gap-1.5 text-xs font-bold text-success bg-success/10 px-3 py-1.5 rounded-full">
+                  <CheckCircle2 className="w-4 h-4" /> Connected
+                </span>
+                <button 
+                  onClick={handleSync}
+                  disabled={syncing}
+                  className="text-sm font-bold text-primary hover:text-primary/80 transition-colors px-4 py-2 border border-primary/20 hover:bg-primary/10 rounded-lg flex items-center gap-2"
+                >
+                  {syncing ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                  {syncing ? 'Syncing...' : 'Sync Now'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-sm font-bold text-text-1 mb-2">Channel ID or Handle</label>
+                <input 
+                  type="text" 
+                  value={ytConfig.channelInput}
+                  onChange={(e) => setYtConfig({...ytConfig, channelInput: e.target.value})}
+                  placeholder="e.g. UC_x5XG1OV2P6uZZ5FSM9Ttw"
+                  className="w-full bg-bg-elevated border border-border rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-primary transition-colors text-text-1"
+                />
               </div>
               <div>
-                <h3 className="font-bold text-text-1 text-lg">Alex's Tech Corner</h3>
-                <p className="text-sm text-text-2">42.6K subscribers</p>
+                <label className="block text-sm font-bold text-text-1 mb-2">YouTube Data API v3 Key</label>
+                <div className="relative">
+                  <Key className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-3" />
+                  <input 
+                    type="password" 
+                    value={ytConfig.apiKey}
+                    onChange={(e) => setYtConfig({...ytConfig, apiKey: e.target.value})}
+                    placeholder="Enter your API key"
+                    className="w-full bg-bg-elevated border border-border rounded-lg pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:border-primary transition-colors text-text-1"
+                  />
+                </div>
               </div>
             </div>
-            <div className="flex items-center gap-4">
-              <span className="hidden md:flex items-center gap-1.5 text-xs font-bold text-success bg-success/10 px-3 py-1.5 rounded-full">
-                <CheckCircle2 className="w-4 h-4" /> Connected
-              </span>
-              <button className="text-sm font-bold text-danger hover:text-danger/80 transition-colors px-4 py-2 border border-danger/20 hover:bg-danger/10 rounded-lg">
-                Disconnect
+          )}
+          
+          {!configData?.youtube && (
+            <div className="flex justify-end pt-4 border-t border-border">
+              <button 
+                onClick={handleSaveYt}
+                disabled={savingYt}
+                className="flex items-center gap-2 px-4 py-2 bg-danger text-white font-bold rounded-lg hover:bg-danger/90 transition-colors disabled:opacity-50"
+              >
+                {savingYt ? <Loader2 className="w-4 h-4 animate-spin" /> : <LinkIcon className="w-4 h-4" />}
+                Connect Channel
               </button>
             </div>
-          </div>
-          <button className="flex items-center gap-2 text-sm font-bold text-primary hover:text-primary/80 transition-colors">
-            <LinkIcon className="w-4 h-4" /> Connect Another Channel
-          </button>
+          )}
         </div>
       </section>
 
@@ -163,25 +305,6 @@ export function Settings() {
         </div>
       </section>
 
-
-      <section>
-        <h2 className="text-sm font-bold text-text-3 uppercase tracking-wider mb-4">Data Refresh</h2>
-        <div className="bg-bg-surface border border-border rounded-xl p-6 shadow-sm">
-          <p className="text-sm text-text-2 mb-4">Choose how often the dashboard re-checks the existing data cache.</p>
-          <div className="flex gap-2">
-            {[1, 2].map((minutes) => (
-              <button
-                key={minutes}
-                onClick={() => setRefreshIntervalMinutes(minutes as 1 | 2)}
-                className={cn('px-4 py-2 rounded-lg border text-sm font-bold', refreshIntervalMinutes === minutes ? 'bg-primary text-white border-primary' : 'border-border bg-bg-elevated text-text-2')}
-              >
-                Every {minutes} minute{minutes === 1 ? '' : 's'}
-              </button>
-            ))}
-          </div>
-        </div>
-      </section>
-
       {/* Notifications */}
       <section>
         <h2 className="text-sm font-bold text-text-3 uppercase tracking-wider mb-4">Notifications</h2>
@@ -262,7 +385,7 @@ export function Settings() {
               <input 
                 type="text" 
                 defaultValue="Alex"
-                className="w-full bg-bg-elevated border border-border rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-primary transition-colors"
+                className="w-full bg-bg-elevated border border-border rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-primary transition-colors text-text-1"
                 readOnly
               />
             </div>
@@ -271,7 +394,7 @@ export function Settings() {
               <input 
                 type="email" 
                 defaultValue="alex@creatorpulse.app"
-                className="w-full bg-bg-elevated border border-border rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-primary transition-colors"
+                className="w-full bg-bg-elevated border border-border rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-primary transition-colors text-text-1"
                 readOnly
               />
             </div>

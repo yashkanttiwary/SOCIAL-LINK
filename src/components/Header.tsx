@@ -1,8 +1,23 @@
 import { Search, Sun, Moon, Bell, User } from 'lucide-react';
 import { useThemeStore } from '../store/themeStore';
+import { useState, useEffect } from 'react';
+import { api } from '../lib/api';
 
 export function Header() {
   const { theme, toggleTheme } = useThemeStore();
+  const [user, setUser] = useState<any>(null);
+
+  useEffect(() => {
+    async function loadUser() {
+      try {
+        const data = await api.auth.me();
+        setUser(data.user);
+      } catch (err) {
+        console.error(err);
+      }
+    }
+    loadUser();
+  }, []);
 
   return (
     <header className="h-16 bg-bg-surface border-b border-border flex items-center justify-between px-6 sticky top-0 z-10 transition-colors duration-300">
@@ -31,8 +46,8 @@ export function Header() {
           <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-danger rounded-full border border-bg-surface"></span>
         </button>
         
-        <div className="w-8 h-8 rounded-full bg-primary-muted border border-primary flex items-center justify-center text-primary cursor-pointer hover:bg-primary/20 transition-colors">
-          <User className="w-4 h-4" />
+        <div className="w-8 h-8 rounded-full bg-primary-muted border border-primary flex items-center justify-center text-primary cursor-pointer hover:bg-primary/20 transition-colors font-bold text-sm">
+          {user?.name ? user.name.charAt(0).toUpperCase() : <User className="w-4 h-4" />}
         </div>
       </div>
     </header>

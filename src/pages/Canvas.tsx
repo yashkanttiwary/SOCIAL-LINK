@@ -1,162 +1,256 @@
-import { useMemo, useRef, useState, type PointerEvent, type MouseEvent } from 'react';
-import { MousePointer2, StickyNote, Type, GitMerge, Sparkles, Trash2, Link2 } from 'lucide-react';
+import { useState, useRef, useEffect, PointerEvent, MouseEvent } from 'react';
+import { MousePointer2, StickyNote, PenTool, Square, Type, GitMerge, Sparkles, Loader2 } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { useDataStore } from '../store/dataStore';
-
-const colors = ['bg-yellow-200 text-yellow-900', 'bg-green-200 text-green-900', 'bg-blue-200 text-blue-900', 'bg-pink-200 text-pink-900', 'bg-purple-200 text-purple-900'];
-
-type Tool = 'cursor' | 'sticky' | 'text' | 'connector';
+import { useAIPanelStore } from '../store/aiPanelStore';
+import { api } from '../lib/api';
 
 export function Canvas() {
-  const {
-    canvasItems,
-    canvasConnections,
-    report,
-    addCanvasItem,
-    updateCanvasItem,
-    removeCanvasItem,
-    addCanvasConnection,
-    addTopicToCanvas,
-  } = useDataStore();
-  const [activeTool, setActiveTool] = useState<Tool>('cursor');
+  const { openPanel } = useAIPanelStore();
+  const [notes, setNotes] = useState<any[]>([]);
+  const [themeText, setThemeText] = useState('Sustainable Tech');
+  const [activeTool, setActiveTool] = useState('cursor');
   const [draggingId, setDraggingId] = useState<number | null>(null);
-  const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [connectorStart, setConnectorStart] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [aiSuggestion, setAiSuggestion] = useState("I found trending topics related to your 'Sustainable Tech' idea. Interest in biophilic hardware has risen 40% in Western Europe.");
+  const [loadingSuggestion, setLoadingSuggestion] = useState(false);
   const canvasRef = useRef<HTMLDivElement>(null);
 
-  const itemMap = useMemo(() => new Map(canvasItems.map((item) => [item.id, item])), [canvasItems]);
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const data = await api.canvas.get();
+        setNotes(data.notes);
+        setThemeText(data.theme);
+        fetchSuggestion(data.theme);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadData();
+  }, []);
 
-  const handleCanvasClick = (e: MouseEvent<HTMLDivElement>) => {
-    const rect = canvasRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    if (activeTool !== 'sticky' && activeTool !== 'text') return;
-    const x = e.clientX - rect.left - 90;
-    const y = e.clientY - rect.top - 80;
-    const kind = activeTool === 'sticky' ? 'sticky' : 'text';
-    addCanvasItem({
-      text: kind === 'sticky' ? 'New sticky note' : 'New text block',
-      kind,
-      color: kind === 'sticky' ? colors[Math.floor(Math.random() * colors.length)] : 'text-text-1',
-      x,
-      y,
-      r: kind === 'sticky' ? Math.random() * 8 - 4 : 0,
-    });
-    setActiveTool('cursor');
+  const fetchSuggestion = async (theme: string) => {
+    if (!theme) return;
+    setLoadingSuggestion(true);
+    try {
+      const res = await api.ai.canvasSuggestion(theme);
+      setAiSuggestion(res.suggestion);
+    } catch (err: any) {
+      console.error('Failed to get AI suggestion', err);
+      if (err.message.includes('AI not configured')) {
+        setAiSuggestion('AI is not configured. Please add your Gemini API key in Settings.');
+      } else {
+        setAiSuggestion('Failed to generate suggestion. Please try again later.');
+      }
+    } finally {
+      setLoadingSuggestion(false);
+    }
   };
 
-  const onPointerDown = (e: PointerEvent<HTMLDivElement>, id: number) => {
-    e.stopPropagation();
-    setSelectedId(id);
-
-    if (activeTool === 'connector') {
-      if (!connectorStart) setConnectorStart(id);
-      else {
-        addCanvasConnection(connectorStart, id);
-        setConnectorStart(null);
-      }
-      return;
+  const saveCanvas = async (newNotes: any[]) => {
+    try {
+      await api.canvas.save({ notes: newNotes, theme: themeText });
+    } catch (err) {
+      console.error('Failed to save canvas', err);
     }
+  };
 
+  const handlePointerDown = (e: PointerEvent, id: number) => {
     if (activeTool !== 'cursor') return;
     setDraggingId(id);
     e.currentTarget.setPointerCapture(e.pointerId);
   };
 
-  const onPointerMove = (e: PointerEvent<HTMLDivElement>) => {
-    if (!draggingId) return;
-    const item = itemMap.get(draggingId);
-    if (!item) return;
-    updateCanvasItem(draggingId, { x: item.x + e.movementX, y: item.y + e.movementY });
+  const handlePointerMove = (e: PointerEvent) => {
+    if (draggingId === null) return;
+    
+    setNotes(notes.map(note => {
+      if (note.id === draggingId) {
+        return {
+          ...note,
+          x: note.x + e.movementX,
+          y: note.y + e.movementY
+        };
+      }
+      return note;
+    }));
   };
 
-  const onPointerUp = (e: PointerEvent<HTMLDivElement>) => {
-    if (!draggingId) return;
-    e.currentTarget.releasePointerCapture(e.pointerId);
-    setDraggingId(null);
+  const handlePointerUp = (e: PointerEvent) => {
+    if (draggingId !== null) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+      setDraggingId(null);
+      saveCanvas(notes);
+    }
   };
+
+  const addNote = (e: MouseEvent) => {
+    if (activeTool !== 'sticky') return;
+    
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    
+    const x = e.clientX - rect.left - 100; // Center note on click
+    const y = e.clientY - rect.top - 100;
+    
+    const colors = [
+      'bg-yellow-200 text-yellow-900',
+      'bg-green-200 text-green-900',
+      'bg-blue-200 text-blue-900',
+      'bg-pink-200 text-pink-900',
+      'bg-purple-200 text-purple-900'
+    ];
+    
+    const newNote = {
+      id: Date.now(),
+      text: 'New Note',
+      color: colors[Math.floor(Math.random() * colors.length)],
+      x,
+      y,
+      r: Math.random() * 10 - 5
+    };
+
+    const newNotes = [...notes, newNote];
+    setNotes(newNotes);
+    saveCanvas(newNotes);
+    
+    setActiveTool('cursor');
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
-    <div className="absolute inset-0 overflow-hidden bg-bg-base" style={{ backgroundImage: 'radial-gradient(var(--border) 1px, transparent 1px)', backgroundSize: '28px 28px' }}>
-      <div className="absolute top-5 left-5 bg-bg-surface/95 border border-border rounded-2xl p-2 shadow-xl flex flex-col gap-2 z-20">
+    <div className="absolute inset-0 overflow-hidden bg-bg-base" style={{ backgroundImage: 'radial-gradient(var(--border) 1px, transparent 1px)', backgroundSize: '30px 30px' }}>
+      {/* Toolbar */}
+      <div className="absolute top-6 left-6 bg-bg-surface/80 backdrop-blur-md border border-border rounded-2xl p-2 shadow-lg flex flex-col gap-2 z-20">
         {[
-          { id: 'cursor', icon: MousePointer2, label: 'Move' },
-          { id: 'sticky', icon: StickyNote, label: 'Sticky' },
-          { id: 'text', icon: Type, label: 'Text' },
-          { id: 'connector', icon: GitMerge, label: 'Link' },
-        ].map((tool) => (
-          <button key={tool.id} onClick={() => setActiveTool(tool.id as Tool)} title={tool.label} className={cn('p-3 rounded-xl transition-colors', activeTool === tool.id ? 'bg-primary text-white shadow-md' : 'text-text-2 hover:bg-bg-elevated hover:text-text-1')}>
+          { id: 'cursor', icon: MousePointer2 },
+          { id: 'sticky', icon: StickyNote },
+          { id: 'draw', icon: PenTool },
+          { id: 'shape', icon: Square },
+          { id: 'text', icon: Type },
+          { id: 'connector', icon: GitMerge },
+        ].map(tool => (
+          <button
+            key={tool.id}
+            onClick={() => setActiveTool(tool.id)}
+            className={cn(
+              "p-3 rounded-xl transition-colors",
+              activeTool === tool.id ? "bg-primary text-white shadow-md" : "text-text-2 hover:bg-bg-elevated hover:text-text-1"
+            )}
+          >
             <tool.icon className="w-5 h-5" />
           </button>
         ))}
       </div>
 
-      <div className="absolute top-5 left-1/2 -translate-x-1/2 bg-bg-surface/95 border border-border rounded-xl px-5 py-3 shadow-lg z-20">
-        <p className="text-xs text-text-3 uppercase">Focus Topic</p>
-        <h2 className="font-black text-text-1">{report.topic}</h2>
+      {/* Theme Card */}
+      <div className="absolute top-10 left-1/2 -translate-x-1/2 bg-bg-surface border-2 border-primary rounded-2xl px-8 py-4 shadow-lg z-10">
+        <h2 className="font-black text-xl text-text-1 tracking-widest uppercase">Core Theme: {themeText}</h2>
       </div>
 
-      <div
+      {/* Canvas Area */}
+      <div 
         ref={canvasRef}
-        className={cn('w-full h-full relative', activeTool === 'sticky' || activeTool === 'text' ? 'cursor-copy' : 'cursor-default')}
-        onClick={handleCanvasClick}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerLeave={onPointerUp}
+        className="w-full h-full relative cursor-crosshair"
+        onClick={addNote}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerLeave={handlePointerUp}
       >
+        {/* SVG Connectors (Mock) */}
         <svg className="absolute inset-0 w-full h-full pointer-events-none z-0">
-          {canvasConnections.map((c) => {
-            const from = itemMap.get(c.fromId);
-            const to = itemMap.get(c.toId);
-            if (!from || !to) return null;
-            return <path key={c.id} d={`M ${from.x + 90} ${from.y + 70} C ${from.x + 150} ${from.y + 70}, ${to.x + 30} ${to.y + 70}, ${to.x + 90} ${to.y + 70}`} fill="none" stroke="var(--primary)" strokeOpacity="0.5" strokeWidth="2" />;
-          })}
+          <path d="M 300 250 Q 400 200 500 200" fill="none" stroke="var(--border)" strokeWidth="2" strokeDasharray="4 4" />
+          <path d="M 450 450 Q 550 400 700 350" fill="none" stroke="var(--border)" strokeWidth="2" strokeDasharray="4 4" />
         </svg>
 
-        {canvasItems.map((item) => (
+        {/* Sticky Notes */}
+        {notes.map(note => (
           <div
-            key={item.id}
-            onPointerDown={(e) => onPointerDown(e, item.id)}
+            key={note.id}
+            onPointerDown={(e) => handlePointerDown(e, note.id)}
             className={cn(
-              'absolute rounded-xl p-3 shadow-lg border border-black/5 transition-all',
-              item.kind === 'sticky' ? 'w-44 min-h-36' : 'w-60 min-h-24 bg-bg-surface border-border',
-              item.color,
-              selectedId === item.id ? 'ring-2 ring-primary z-40' : 'z-10',
+              "absolute w-48 h-48 rounded-xl p-4 shadow-lg cursor-grab active:cursor-grabbing transition-shadow",
+              note.color,
+              draggingId === note.id ? "shadow-2xl z-50 scale-105" : "z-10 hover:shadow-xl"
             )}
-            style={{ transform: `translate(${item.x}px, ${item.y}px) rotate(${item.r}deg)`, touchAction: 'none' }}
+            style={{ 
+              transform: `translate(${note.x}px, ${note.y}px) rotate(${note.r}deg)`,
+              touchAction: 'none'
+            }}
           >
             <textarea
-              value={item.text}
-              onChange={(e) => updateCanvasItem(item.id, { text: e.target.value })}
+              className="w-full h-full bg-transparent border-none resize-none focus:outline-none font-medium text-sm"
+              defaultValue={note.text}
               onClick={(e) => e.stopPropagation()}
-              className={cn('w-full min-h-20 bg-transparent border-none resize-none focus:outline-none text-sm', item.kind === 'text' ? 'text-text-1' : 'font-medium')}
             />
-            {selectedId === item.id && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  removeCanvasItem(item.id);
-                  setSelectedId(null);
-                }}
-                className="absolute -top-3 -right-3 w-7 h-7 rounded-full bg-danger text-white flex items-center justify-center"
-                aria-label="Delete canvas item"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
-            )}
+            <div className="absolute bottom-3 left-4 right-4 flex justify-between items-center text-[10px] font-bold opacity-50">
+              <span>Alex</span>
+              <span>10:42 AM</span>
+            </div>
           </div>
         ))}
       </div>
 
-      <div className="absolute bottom-6 right-6 w-84 max-w-[90vw] bg-bg-surface border border-border rounded-2xl shadow-2xl z-20">
-        <div className="p-4 border-b border-border flex items-center justify-between">
-          <div className="flex items-center gap-2"><Sparkles className="w-4 h-4 text-primary" /><h3 className="font-bold text-sm">AI Canvas Copilot</h3></div>
-          <span className="text-[10px] font-bold text-success">LIVE</span>
+      {/* AI Assistant Panel (Persistent on Canvas) */}
+      <div className="absolute bottom-6 right-6 w-80 bg-bg-surface border border-border rounded-2xl shadow-2xl overflow-hidden z-20 flex flex-col">
+        <div className="bg-bg-elevated p-4 border-b border-border flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-5 h-5 text-primary" />
+            <h3 className="font-bold text-sm text-text-1">Fusion AI Assistant</h3>
+          </div>
+          <span className="flex items-center gap-1.5 text-[10px] font-bold text-success uppercase tracking-wider">
+            <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse"></span>
+            Online
+          </span>
         </div>
-        <div className="p-4 space-y-3 text-sm">
-          <p className="text-text-2">Top signals: {report.emergingTopics.slice(0, 2).join(', ')}</p>
-          <button onClick={addTopicToCanvas} className="w-full bg-primary text-white font-bold py-2.5 rounded-lg">Add AI topic card</button>
-          <button onClick={() => setActiveTool('connector')} className="w-full border border-primary text-primary font-bold py-2.5 rounded-lg flex items-center justify-center gap-2"><Link2 className="w-4 h-4" /> Connect two notes</button>
-          {connectorStart && <p className="text-xs text-text-3">Select a second note to complete the connector.</p>}
+        <div className="p-5 space-y-4">
+          <div className="bg-primary-muted/30 border border-primary/20 rounded-xl p-4 relative">
+            <div className="absolute -left-1.5 top-4 w-3 h-3 bg-bg-surface border border-primary/20 rotate-45"></div>
+            {loadingSuggestion ? (
+              <div className="flex items-center gap-2 text-sm text-text-2 italic">
+                <Loader2 className="w-4 h-4 animate-spin" /> Thinking...
+              </div>
+            ) : (
+              <p className="text-sm text-text-1 italic leading-relaxed">
+                "{aiSuggestion}"
+              </p>
+            )}
+          </div>
+          <button 
+            onClick={() => {
+              if (loadingSuggestion || aiSuggestion.includes('not configured')) return;
+              
+              const rect = canvasRef.current?.getBoundingClientRect();
+              const x = rect ? rect.width / 2 - 100 : 200;
+              const y = rect ? rect.height / 2 - 100 : 200;
+              
+              const newNote = {
+                id: Date.now(),
+                text: aiSuggestion,
+                color: 'bg-purple-200 text-purple-900',
+                x,
+                y,
+                r: Math.random() * 10 - 5
+              };
+              const newNotes = [...notes, newNote];
+              setNotes(newNotes);
+              saveCanvas(newNotes);
+              fetchSuggestion(themeText); // Get a new suggestion
+            }}
+            disabled={loadingSuggestion || aiSuggestion.includes('not configured')}
+            className="w-full bg-primary hover:bg-primary/90 text-white font-bold py-2.5 rounded-lg transition-colors shadow-sm text-sm disabled:opacity-50"
+          >
+            Add to Canvas
+          </button>
         </div>
       </div>
     </div>
